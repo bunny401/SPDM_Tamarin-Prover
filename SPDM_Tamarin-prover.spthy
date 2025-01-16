@@ -1,0 +1,102 @@
+theory spdm
+begin
+
+builtins: diffie-hellman, signing, asymmetric-encryption, symmetric-encryption
+
+//CA's own key pair generation
+rule Certificate_Authority:
+
+    let 
+    CA_pub = pk(~CA_sk)
+  in
+  [ Fr(~CA_sk) ] 
+  --[ CA_Key_Generated(~CA_sk) ]-> 
+
+  [ !CA_SecretKey(~CA_sk),
+    !CA_PublicKey(CA_pub),
+    Out(CA_pub) ]
+
+//Alice requests a certificate, CA's rule
+rule CA_Issues_Alice_Certificate:
+let
+Alice_PK=pk(~Ask)                                           //Alice's Public Key
+Alice_Signed_Cert=sign(<'Alice', Alice_PK>, ~CA_sk)         // The CA signs
+in
+[
+    !CA_SecretKey(~CA_sk)
+]
+--[ CA_Issues_Alice_Cert('Alice', Alice_PK)]->
+[
+    !Alice_Certificate(Alice_Signed_Cert)
+]
+
+//Bob requests a certificate, CA's rule
+rule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///////////////////////////////////////////////////////
+///////// Initiatlizing Roles and Their Endpoints /////
+//////////////////////////////////////////////////////
+rule Init_Alice:
+[
+    Fr(~Ask)
+]
+
+--[ InitAliceKey(~Ask) ]->
+[
+    !Alice_Key(~Ask, pk(~Ask)),
+    Out(pk(~Ask))
+]
+
+rule Init_Bob:
+[
+    Fr(~Bsk)
+]
+
+--[InitBobKey(~Bsk)]->
+[
+    !Bob_Key(~Bsk, pk(~Bsk)),
+    Out(pk(~Bsk))
+]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+end
