@@ -13,17 +13,6 @@ SPDM (Secure Platform Device Measurement) is a standardized protocol developed b
 - **Capability Negotiation**:
   - Devices negotiate supported protocol versions, cryptographic algorithms, and capabilities during the VCA (Version-Capabilities-Algorithms) phase.
 
-## Phases in SPDM
-1. **Initialize Identity**:
-   - Each device is assigned a unique identity and obtains a certificate signed by the trusted CA.
-2. **VCA Phase (Version-Capabilities-Algorithms)**:
-   - Devices exchange and negotiate protocol versions, supported cryptographic algorithms, and other capabilities.
-3. **Key Exchange**:
-   - Devices establish a shared key using secure key exchange mechanisms (e.g., Diffie-Hellman).
-4. **Attestation**:
-   - The Responder provides measurements (e.g., firmware state) to the Initiator for verification.
-5. **Secure Channel Setup**:
-   - An encrypted and authenticated communication channel is established based on agreed parameters.
 
 ## Why Use SPDM?
 SPDM provides a robust framework for secure communication and trust establishment between devices. It ensures:
