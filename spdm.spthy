@@ -3,6 +3,47 @@ begin
 
 builtins: diffie-hellman, signing, asymmetric-encryption, symmetric-encryption
 
+
+///////////////////////////////////////////////////////
+/////////////// INITIALIZATION ROLE //////////////////
+//////////////////////////////////////////////////////
+rule Init_Alice:
+let
+    Alice_Pub_Key= pk(~Ask)
+    V_A = <'v1_A', 'v2_A'>  // Alice's supported protocol versions
+    A_A = <'a1_A', 'a2_A'>  // Alice's supported algorithms
+in
+[ 
+    Fr(~Ask),  
+    !CA_PublicKey(CA_pub)
+    //!Alice_Certificate(Alice_Signed_Cert) 
+]
+
+--[ InitAlice(~Ask) ]->
+
+  [ !Alice_Keys(~Ask, pk(~Ask)),
+    !Alice_Pub(Alice_Pub_Key),
+    !Capabilities('Alice', V_A, A_A),
+    Out(Alice_Pub_Key) ]
+
+
+rule Init_Bob:
+let
+    Bob_Pub_Key= pk(~Bsk)
+    V_B = <'v1_B', 'v2_B'>  // Bob's supported protocol versions
+    A_B = <'a1_B', 'a2_B'>  // Bob's supported algorithms
+in
+[
+    Fr(~Bsk), 
+    !CA_PublicKey(CA_pub)
+    //!Bob_Certificate(Bob_Signed_Cert)
+ 
+]
+--[ InitBob(~Bsk) ]->
+[   !Bob_Keys(~Bsk, pk(~Bsk)),
+    !Bob_Pub(Bob_Pub_Key),
+    !Capabilities('Bob', V_B, A_B),
+    Out(Bob_Pub_Key) ]
 ///////////////////////////////////////////////////////
 /////////////// Inititalize Identities/////////////////
 //////CA GENERATION & CERTIFICATE ISSUANCE/////////////
@@ -13,15 +54,16 @@ builtins: diffie-hellman, signing, asymmetric-encryption, symmetric-encryption
 //CA's own key pair generation
 rule Certificate_Authority:
 
-    let 
+let 
     CA_pub = pk(~CA_sk)
   in
-  [ Fr(~CA_sk) ] 
-  --[ CA_Key_Generated(~CA_sk) ]-> 
+[ Fr(~CA_sk) ] 
+--[ CA_Key_Generated(~CA_sk) ]-> 
 
-  [ !CA_SecretKey(~CA_sk),
+[   !CA_SecretKey(~CA_sk),
     !CA_PublicKey(CA_pub),
-    Out(CA_pub) ]
+    Out(CA_pub) 
+]
 
 
 
@@ -29,10 +71,11 @@ rule Certificate_Authority:
 //Alice certificate
 rule CA_Issues_Alice_Certificate:
 let
-Alice_PK=pk(~Ask)                                           //Alice's Public Key
+Alice_PK=Alice_Pub_Key                                       //Alice's Public Key
 Alice_Signed_Cert=sign(<'Alice', Alice_PK>, ~CA_sk)         // The CA signs
 in
 [
+    !Alice_Pub(Alice_Pub_Key),
     !CA_SecretKey(~CA_sk)
 ]
 --[ CA_Issues_Alice_Cert('Alice', Alice_PK)]->
@@ -42,10 +85,11 @@ in
 
 //Bob certificate
 rule CA_Issues_Bob_Certificate:
-let Bob_PK=pk(~Bsk)
+let Bob_PK=Bob_Pub_Key
 Bob_Signed_Cert=sign(<'Bob', Bob_PK>, ~CA_sk)
 in
 [
+    !Bob_Pub(Bob_Pub_Key),
     !CA_SecretKey(~CA_sk)
 ]
 
@@ -54,48 +98,7 @@ in
     !Bob_Certificate(Bob_Signed_Cert)
 ]
 
-/* Alice requests the certificate from Bob (the Responder) */
-/* Bob responds with his certificate (already issued by CA) */
-/* Alice verifies Bob’s certificate */
 
-///////////////////////////////////////////////////////
-/////////////// INITIALIZATION ROLE //////////////////
-//////////////////////////////////////////////////////
-
-rule Init_Alice:
-let
-    V_A = <v1_A, v2_A>  // Alice's supported protocol versions
-    A_A = <a1_A, a2_A>  // Alice's supported algorithms
-in
-[ 
-    Fr(~Ask),  
-    !CA_PublicKey(CA_pub),
-    !Alice_Certificate(Alice_Signed_Cert) 
-]
-
---[ InitAlice(~Ask) ]->
-
-  [ !Alice_Key(~Ask, pk(~Ask)),
-    !Capabilities('Alice', V_A, A_A),
-    Out(pk(~Ask)) ]
-
-
-rule Init_Bob:
-let
-    V_B = <v1_B, v2_B>  // Bob's supported protocol versions
-    A_B = <a1_B, a2_B>  // Bob's supported algorithms
-in
-[
-    Fr(~Bsk), 
-    !CA_PublicKey(CA_pub),
-    !Bob_Certificate(Bob_Signed_Cert)
- 
-]
---[ InitBob(~Bsk) ]->
-[   !Bob_Key(~Bsk, pk(~Bsk)),
-    !Capabilities('Bob', V_B, A_B),
-    Out(pk(~Bsk)) ]
-  
 
 ///////////////////////////////////////////////////////
 ////////////////////// VCA Phase /////////////////////
@@ -112,31 +115,55 @@ in
     !Alice_Certificate(cert_A),
     !Capabilities('Alice', V_A, A_A) 
 ]
-  --[ VCARequestSent('Alice') ]->
+  --[ VCARequestSent(message_A) ]->
 [ 
-    Out(message_A) 
+    Out(message_A)
 
 ]
 
 rule VCA_Response_From_Bob:
 let
     message_B= <'VCA_RSP', V_B, A_B, cert_B>  // Response message
-    message_rec=<'VCA_REQ', V_A, A_A, cert_A>
+    message_sent_by_Alice=<'VCA_REQ', V_A, A_A, cert_A>
 
 in
 [ 
-    In(message_rec),
+    In(message_sent_by_Alice),
     !Bob_Certificate(cert_B),
     !Capabilities('Bob', V_B, A_B)
 ]
---[ VCAResponseSent('Bob') ]->
+--[ VCAResponseSent(message_B)]->
 [ 
     Out(message_B)
 ]
 
+rule VCA_Response_Processed_By_Alice:
+let
+    message_sent_by_Bob = <'VCA_RSP', V_B, A_B, cert_B>
+    AgreedVersion = <V_A, V_B>
+    AgreedAlgorithm = <A_A, A_B>
+in
+[
+    In(message_sent_by_Bob),
+    !Capabilities('Alice', V_A, A_A)
+
+
+]
+--[ VCAResponseProcessed(AgreedVersion, AgreedAlgorithm) ]->
+[
+    !Agreement('Alice', 'Bob', AgreedVersion, AgreedAlgorithm)
+]
 
 
 
+
+// lemma Sanity_Check:
+// exists-trace 
+// "Ex message_A message_B AgreedVersion AgreedAlgorithm #i #j #k.
+// VCARequestSent(message_A) @i &
+// VCAResponseSent(message_B) @j &
+// VCAResponseProcessed(AgreedVersion, AgreedAlgorithm) @k
+// "
 
 
 
