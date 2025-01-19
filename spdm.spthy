@@ -170,12 +170,12 @@ in
 
 ]
 --[ VCAResponseProcessed(AgreedVersion),
-State_Alice2('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B),
-
-!VCA_Transcript('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B) 
+State_Alice2('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B)
 ]->
+
 [
-    !Agreement('Alice', 'Bob', AgreedVersion  )
+    !Agreement('Alice', 'Bob', AgreedVersion  ),
+    !VCA_Transcript('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B)
 ]
 
 
@@ -235,8 +235,8 @@ in
 rule Alice_KE_Request:
 let
     gx = 'g'^~x
-    message = <'Key_Exchange', gx, NonceA>
-    new_transcript = (<'Key_Exchange',gx, NonceA>)
+    message = <'KEY_EXCHANGE', gx, NonceA>
+    new_transcript = (<'KEY_EXCHANGE',gx, NonceA>)
 in
 [
     Fr(~x),
@@ -251,37 +251,36 @@ in
 ]
 
 rule Bob_Key_Exchange_Response:
+
 let
-
 VCA = <'VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B>
-gy = g^~y         
+gy = 'g'^~y         
 dh_out = gx^~y
-Transcript = <VCA, Hash(cert_B), 'KEY_EXCHANGE', g^x, Nonce_A,'KEY_EXCHANGE_RSP', g^~y, Nonce_B>
-signature = sign(h(Transcript), ~Bsk)
-hmac_key_resp = hkdf(<dh_out, transcript_for_signing, 'finished resp'>)  
-hmac_key_init = hkdf(<dh_out, transcript_for_signing, 'finished init'>)
-
-
+Transcript = <VCA, h(cert_B), 'KEY_EXCHANGE', gx, NonceA,'KEY_EXCHANGE_RSP', gy, ~NonceB>
+Signature = sign(h(Transcript), ~Bsk)
+HMAC_Key_Resp = hkdf(dh_out, Transcript, 'finished resp')  
+HMAC_Key_Init = hkdf(dh_out, Transcript, 'finished init')
+HMAC_Resp = hmac(Transcript, HMAC_Key_Resp)
+response_msg = <'KEY_EXCHANGE_RSP', gy, ~NonceB, Signature, HMAC_Resp>
 
 in
-[
-    In(<'KEY_EXCHANGE', gx, NonceA>),
+[   In(<'KEY_EXCHANGE', gx, NonceA>),
     Fr(~y),                            
-    Fr(~NonceB),  
-    !VCA_Transcript('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B),
-    !Bob_Keys(~Bsk, pk(~Bsk)) 
+    Fr(~NonceB), 
+    !Bob_Keys(~Bsk, pk(~Bsk)),
+    !VCA_Transcript('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B) 
 
 ]
 
---[]->
+--[KeyExchangeResponseSent('Bob', gy, ~NonceB, Signature)]->
 
 [
     !Ephemeral_Key_Bob(gy),            
     !Nonce_Bob(~NonceB),               
     !Shared_Key_Bob(dh_out),          
-    !Finished_Key_Responder(hmac_key_resp),  
-    !Finished_Key_Initiator(hmac_key_init)
-
+    !Finished_Key_Responder(HMAC_Key_Resp),  
+    !Finished_Key_Initiator(HMAC_Key_Init),
+    Out(response_msg)
 ]
 
 
