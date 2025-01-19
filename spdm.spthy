@@ -11,7 +11,6 @@ rule Init_Alice:
 let
     Alice_Pub_Key= pk(~Ask)
     V_A = <'v1_A', 'v2_A'>  // Alice's supported protocol versions
-    A_A = <'a1_A', 'a2_A'>  // Alice's supported algorithms
 in
 [ 
     Fr(~Ask),  
@@ -23,7 +22,7 @@ in
 
   [ !Alice_Keys(~Ask, pk(~Ask)),
     !Alice_Pub(Alice_Pub_Key),
-    !Capabilities('Alice', V_A, A_A),
+    !Capabilities('Alice', V_A),
     Out(Alice_Pub_Key) ]
 
 
@@ -31,7 +30,6 @@ rule Init_Bob:
 let
     Bob_Pub_Key= pk(~Bsk)
     V_B = <'v1_B', 'v2_B'>  // Bob's supported protocol versions
-    A_B = <'a1_B', 'a2_B'>  // Bob's supported algorithms
 in
 [
     Fr(~Bsk), 
@@ -42,8 +40,10 @@ in
 --[ InitBob(~Bsk) ]->
 [   !Bob_Keys(~Bsk, pk(~Bsk)),
     !Bob_Pub(Bob_Pub_Key),
-    !Capabilities('Bob', V_B, A_B),
+    !Capabilities('Bob', V_B),
     Out(Bob_Pub_Key) ]
+
+
 ///////////////////////////////////////////////////////
 /////////////// Inititalize Identities/////////////////
 //////CA GENERATION & CERTIFICATE ISSUANCE/////////////
@@ -108,14 +108,18 @@ rule VCA_Request_From_Alice:
 
 let 
 
-    message_A = <'VCA_REQ', V_A, A_A, cert_A> // Request message
+    message_A = <'VCA_REQ', V_A, Alice_Pub_Key, cert_A> // Request message
       
 in
 [  
     !Alice_Certificate(cert_A),
-    !Capabilities('Alice', V_A, A_A) 
+    !Capabilities('Alice', V_A),
+    !Alice_Keys(~Ask, pk(~Ask)),
+    !Alice_Pub(Alice_Pub_Key)
+
 ]
-  --[ VCARequestSent(message_A) ]->
+--[ VCARequestSent(message_A),
+    State_Alice1('VCA_REQ', V_A, Alice_Pub_Key, cert_A) ]->
 [ 
     Out(message_A)
 
@@ -123,48 +127,107 @@ in
 
 rule VCA_Response_From_Bob:
 let
-    message_B= <'VCA_RSP', V_B, A_B, cert_B>  // Response message
-    message_sent_by_Alice=<'VCA_REQ', V_A, A_A, cert_A>
+    message_B= <'VCA_RSP', V_B, Bob_Pub_Key, cert_B>  // Response message
+    message_sent_by_Alice=<'VCA_REQ', V_A, Alice_Pub_Key, cert_A>
 
 in
 [ 
     In(message_sent_by_Alice),
     !Bob_Certificate(cert_B),
-    !Capabilities('Bob', V_B, A_B)
+    !Bob_Keys(~Bsk, pk(~Bsk)),
+    !Bob_Pub(Bob_Pub_Key),
+    !Capabilities('Bob', V_B)
 ]
---[ VCAResponseSent(message_B)]->
+--[ VCAResponseSent(message_B),
+    State_Bob1('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B )
+]->
 [ 
     Out(message_B)
 ]
 
 rule VCA_Response_Processed_By_Alice:
 let
-    message_sent_by_Bob = <'VCA_RSP', V_B, A_B, cert_B>
-    AgreedVersion = <V_A, V_B>
-    AgreedAlgorithm = <A_A, A_B>
+    message_sent_by_Bob = <'VCA_RSP', V_B, Bob_Pub_Key, cert_B>
+    AgreedVersion = <V_B>
 in
 [
     In(message_sent_by_Bob),
-    !Capabilities('Alice', V_A, A_A)
-
+    !Alice_Certificate(cert_A),
+    !Alice_Keys(~Ask, pk(~Ask)),
+    !Alice_Pub(Alice_Pub_Key),
+    !Capabilities('Alice', V_A,)
+//should alice verify the bobs' certificate?
 
 ]
---[ VCAResponseProcessed(AgreedVersion, AgreedAlgorithm) ]->
+--[ VCAResponseProcessed(AgreedVersion),
+State_Alice2('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B ) ]->
 [
-    !Agreement('Alice', 'Bob', AgreedVersion, AgreedAlgorithm)
+    !Agreement('Alice', 'Bob', AgreedVersion  )
+]
+
+
+///////////////////////////////////////////////////////
+////////////////////// Measurements////////////////////
+//////////////////////////////////////////////////////
+
+rule Get_Measurements_Request_by_Alice:
+let
+    requestMsg = <'GET_MEASUREMENTS', 'versionI'>  // maybe we put “Initiator’s version”
+in
+[
+    // We check that the initiator has completed VCA with the responder
+    //!Agreement('Alice','Bob', AgreedVer)
+]
+--[ GetMeasurementsRequestbyAlice('versionI') ]->
+[
+    !Alice_measurement('versionI'),
+    Out(requestMsg)
+]
+
+
+rule Send_Measurements_Response_by_Bob:
+let
+    requestMsg = <'GET_MEASUREMENTS', 'versionI'>
+    responseMsg = <'MEASUREMENTS', 'versionR'>
+in
+[
+    In(requestMsg)
+    //!Measurement('Bob', bobMeas)
+]
+--[ MeasurementsSentbyBob('versionR') ]->
+
+[
+    Out(responseMsg)
+]
+
+
+rule Process_Measurements_At_Alice:
+let
+    responseMsg = <'MEASUREMENTS', 'versionR'>
+in
+[
+    !Alice_measurement('versionI'),
+    In(responseMsg)
+]
+--[ Process_Measurements_At_Alice('versionI', 'versionR') ]->
+[
+    // possibly store it in a fact that Alice knows Bob’s measurement
+    !KnowsMeasurement('versionI', 'versionR')
 ]
 
 
 
 
-// lemma Sanity_Check:
-// exists-trace 
-// "Ex message_A message_B AgreedVersion AgreedAlgorithm #i #j #k.
-// VCARequestSent(message_A) @i &
-// VCAResponseSent(message_B) @j &
-// VCAResponseProcessed(AgreedVersion, AgreedAlgorithm) @k
-// "
-
+lemma Sanity_Check:
+  exists-trace
+    "Ex message_A message_B AgreedVersion #i #j #k #l #m #n.
+    VCARequestSent(message_A) @i &
+    VCAResponseSent(message_B) @j &
+    VCAResponseProcessed(AgreedVersion) @k &
+    GetMeasurementsRequestbyAlice('versionI') @l &
+    MeasurementsSentbyBob('versionR') @m &
+    Process_Measurements_At_Alice('versionI', 'versionR') @n
+    "
 
 
 
