@@ -1,7 +1,16 @@
 theory spdm
 begin
 
-builtins: diffie-hellman, signing, asymmetric-encryption, symmetric-encryption
+builtins: diffie-hellman, signing, asymmetric-encryption, symmetric-encryption, hashing
+functions: hmac/2, hkdf/3
+
+
+restriction equality:
+    "All x y #i. Eq(x, y) @ i ==> x = y"
+
+restriction inequality:
+    "All x y #i. Neq(x, y) @ i ==> not(x = y)"
+
 
 
 ///////////////////////////////////////////////////////
@@ -137,6 +146,7 @@ in
     !Bob_Keys(~Bsk, pk(~Bsk)),
     !Bob_Pub(Bob_Pub_Key),
     !Capabilities('Bob', V_B)
+    //should bob verify Alice certificate?
 ]
 --[ VCAResponseSent(message_B),
     State_Bob1('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B )
@@ -148,7 +158,7 @@ in
 rule VCA_Response_Processed_By_Alice:
 let
     message_sent_by_Bob = <'VCA_RSP', V_B, Bob_Pub_Key, cert_B>
-    AgreedVersion = <V_B>
+    AgreedVersion = <V_A, V_B>
 in
 [
     In(message_sent_by_Bob),
@@ -160,7 +170,10 @@ in
 
 ]
 --[ VCAResponseProcessed(AgreedVersion),
-State_Alice2('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B ) ]->
+State_Alice2('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B),
+
+!VCA_Transcript('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B) 
+]->
 [
     !Agreement('Alice', 'Bob', AgreedVersion  )
 ]
@@ -215,19 +228,83 @@ in
     !KnowsMeasurement('versionI', 'versionR')
 ]
 
+///////////////////////////////////////////////////////
+///////////////////KEY EXCHANGE////////////////////////
+//////////////////////////////////////////////////////
+
+rule Alice_KE_Request:
+let
+    gx = 'g'^~x
+    message = <'Key_Exchange', gx, NonceA>
+    new_transcript = (<'Key_Exchange',gx, NonceA>)
+in
+[
+    Fr(~x),
+    Fr(NonceA)
+]
+--[ KeyExchangeSent('Alice', gx, NonceA) ]->
+[
+    Out(message),
+    !Ephemeral_PrivKey_Alice(~x),
+    !Ephemeral_PubKey_Alice(gx),
+    !Transcript(new_transcript)
+]
+
+rule Bob_Key_Exchange_Response:
+let
+
+VCA = <'VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B>
+gy = g^~y         
+dh_out = gx^~y
+Transcript = <VCA, Hash(cert_B), 'KEY_EXCHANGE', g^x, Nonce_A,'KEY_EXCHANGE_RSP', g^~y, Nonce_B>
+signature = sign(h(Transcript), ~Bsk)
+hmac_key_resp = hkdf(<dh_out, transcript_for_signing, 'finished resp'>)  
+hmac_key_init = hkdf(<dh_out, transcript_for_signing, 'finished init'>)
 
 
 
-lemma Sanity_Check:
-  exists-trace
-    "Ex message_A message_B AgreedVersion #i #j #k #l #m #n.
-    VCARequestSent(message_A) @i &
-    VCAResponseSent(message_B) @j &
-    VCAResponseProcessed(AgreedVersion) @k &
-    GetMeasurementsRequestbyAlice('versionI') @l &
-    MeasurementsSentbyBob('versionR') @m &
-    Process_Measurements_At_Alice('versionI', 'versionR') @n
-    "
+in
+[
+    In(<'KEY_EXCHANGE', gx, NonceA>),
+    Fr(~y),                            
+    Fr(~NonceB),  
+    !VCA_Transcript('VCA_REQ', V_A, Alice_Pub_Key, cert_A,'VCA_RSP', V_B, Bob_Pub_Key, cert_B),
+    !Bob_Keys(~Bsk, pk(~Bsk)) 
+
+]
+
+--[]->
+
+[
+    !Ephemeral_Key_Bob(gy),            
+    !Nonce_Bob(~NonceB),               
+    !Shared_Key_Bob(dh_out),          
+    !Finished_Key_Responder(hmac_key_resp),  
+    !Finished_Key_Initiator(hmac_key_init)
+
+]
+
+
+
+
+
+
+
+
+
+
+
+
+// lemma Sanity_Check:
+//   exists-trace
+//     "Ex message_A message_B AgreedVersion #i #j #k #l #m #n.
+//     VCARequestSent(message_A) @i &
+//     VCAResponseSent(message_B) @j &
+//     VCAResponseProcessed(AgreedVersion) @k &
+//     GetMeasurementsRequestbyAlice('versionI') @l &
+//     MeasurementsSentbyBob('versionR') @m &
+//     Process_Measurements_At_Alice('versionI', 'versionR') @n
+//     "
 
 
 
